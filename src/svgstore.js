@@ -2,6 +2,7 @@
 
 // Defaults
 const defaults = {
+  symbol: '__svg__',
   svg: {
     xmlns: 'http://www.w3.org/2000/svg',
     style: 'position:absolute; width: 0; height: 0'
@@ -21,7 +22,6 @@ const NullFactory = require('webpack/lib/NullFactory');
 const async = require('async');
 
 class WebpackSvgStore {
-
   /**
    * Constructor
    * @param {string} input   [description]
@@ -32,13 +32,15 @@ class WebpackSvgStore {
   constructor(options) {
     this.tasks = {};
     this.options = _.merge({}, defaults, options);
-  };
+  }
 
   addTask(file, value) {
-    this.tasks[file] ? this.tasks[file].push(value) : (() => {
-        this.tasks[file] = [];
-        this.tasks[file].push(value);
-      })();
+    this.tasks[file]
+      ? this.tasks[file].push(value)
+      : (() => {
+          this.tasks[file] = [];
+          this.tasks[file].push(value);
+        })();
   }
 
   createTaskContext(expr, parser) {
@@ -48,7 +50,7 @@ class WebpackSvgStore {
       context: parser.state.current.context
     };
 
-    expr.init.properties.forEach(function (prop) {
+    expr.init.properties.forEach(function(prop) {
       switch (prop.key.name) {
         case 'name':
           data.fileName = prop.value.value;
@@ -62,7 +64,7 @@ class WebpackSvgStore {
     });
 
     data.fileName = utils.hash(data.fileName, parser.state.current.buildTimestamp);
-    let replacement = expr.id.name + ' = { filename: ' + "__webpack_require__.p +" + '"' + data.fileName + '" }';
+    let replacement = expr.id.name + ' = { filename: ' + '__webpack_require__.p +' + '"' + data.fileName + '" }';
     let dep = new ConstDependency(replacement, expr.range);
     dep.loc = expr.loc;
     parser.state.current.addDependency(dep);
@@ -73,53 +75,59 @@ class WebpackSvgStore {
   apply(compiler) {
     // AST parser
     compiler.plugin('compilation', (compilation, data) => {
-      
       compilation.dependencyFactories.set(ConstDependency, new NullFactory());
       compilation.dependencyTemplates.set(ConstDependency, new ConstDependency.Template());
-      
+
       data.normalModuleFactory.plugin('parser', (parser, options) => {
-        parser.plugin('statement', (expr) => {
+        parser.plugin('statement', expr => {
           if (!expr.declarations || !expr.declarations.length) return;
           const thisExpr = expr.declarations[0];
-          if ([
-            '__svg__',
-            '__sprite__',
-            '__svgstore__',
-            '__svgsprite__',
-            '__webpack_svgstore__'
-          ].indexOf(thisExpr.id.name) > -1) {
+          if (
+            [
+              '__svg__',
+              '__sprite__',
+              '__svgstore__',
+              '__svgsprite__',
+              '__webpack_svgstore__',
+              this.options.symbol
+            ].indexOf(thisExpr.id.name) > -1
+          ) {
             return this.createTaskContext(thisExpr, parser);
           }
         });
       });
     });
 
-
     // save file to fs
     compiler.plugin('emit', (compilation, callback) => {
-      async.forEach(Object.keys(this.tasks),
+      async.forEach(
+        Object.keys(this.tasks),
         (key, outerCallback) => {
-          async.forEach(this.tasks[key],
+          async.forEach(
+            this.tasks[key],
             (task, callback) => {
-              utils.filesMap(path.join(task.context, task.path || ''), (files) => {
+              utils.filesMap(path.join(task.context, task.path || ''), files => {
                 // fileContent
-                const fileContent = utils.createSprite(
-                  utils.parseFiles(files, this.options), this.options.template);
+                const fileContent = utils.createSprite(utils.parseFiles(files, this.options), this.options.template);
 
                 // add sprite to assets
                 compilation.assets[task.fileName] = {
-                  size: function () {
+                  size: function() {
                     return Buffer.byteLength(fileContent, 'utf8');
                   },
-                  source: function () {
+                  source: function() {
                     return new Buffer(fileContent);
                   }
                 };
                 // done
                 callback();
               });
-            }, outerCallback);
-        }, callback);
+            },
+            outerCallback
+          );
+        },
+        callback
+      );
     });
 
     compiler.plugin('done', () => {
@@ -127,7 +135,6 @@ class WebpackSvgStore {
     });
   }
 }
-
 
 /**
  * Return function
